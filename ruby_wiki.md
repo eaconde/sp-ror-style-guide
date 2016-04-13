@@ -30,4 +30,4 @@ __TOC__
 == Tools ==
 
 == Ruby on Rails ==
-Visit [http://developer.stratpoint.com/wiki/ruby_on_rails RoR] wiki for more information.
+Visit [http://developer.stratpoint.com/wiki/Ruby_on_Rails RoR] wiki for more information.
