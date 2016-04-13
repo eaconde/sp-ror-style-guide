@@ -23,6 +23,7 @@ __TOC__
    password: <%= ENV['MYSQL_DB_PWD'] %>
    host: <%= ENV['MYSQL_DB_HOST'] %>
    port: <%= ENV['MYSQL_DB_PORT'] %>
+
  production:
    <<: *mysql
    database: mysql_database
@@ -34,6 +35,69 @@ Since Rails 4.2 YAML configuration files can be easily loaded with the new confi
 
 
 == Routing ==
+
+* Define additional RESTful actions to a resource by using either the '''''member''''' or '''''collection''''' routes
+
+ # bad
+ get 'users/:id/subscribe'
+ resources :users
+ get 'images/search'
+ resources :images
+
+ # good
+ resources :users do
+   get 'subscribe', on: :member
+ end
+ resources :images do
+   get 'search', on: :collection
+ end
+
+* If there are multiple members or collections on the resource, use the alternative block syntax.
+
+ resources :users do
+   member do
+     get 'subscribe'
+     # more routes...
+   end
+ end
+ resources :images do
+   collection do
+     get 'search'
+     # more routes...
+   end
+ end
+
+* Use nested routes to express better the relationship between ActiveRecord models.
+
+ # app/models/post.rb
+ class Post < ActiveRecord::Base
+   has_many :comments
+ end
+
+ # app/models/comment.rb
+ class Comments < ActiveRecord::Base
+   belongs_to :post
+ end
+
+ # app/config/routes.rb
+ resources :posts do
+   resources :comments
+ end
+
+* Use ''namespace'' to group related routes and ''scope'' to set multiple properties to nested to the  resources.
+
+ namespace :admin do
+   resources :articles, :comments
+ end
+
+ scope module: 'admin', defaults: { format: :json }, except: [:delete] do
+   resources :posts
+ end
+
+* If a must, use the '''''shallow: true''''' option to nest routes more than 1 level deep. Depending on the scenario, it can also be used as a block.
+
+* Don't use match to define any routes unless there is need to map multiple request types among [:get, :post, :patch, :put, :delete] to a single action using :via option.
+
 
 == Controllers ==
 === Rendering ===
