@@ -245,7 +245,7 @@ Unless they have some meaning in the business domain, these methods will like be
 
 Check [http://guides.rubyonrails.org/association_basics.html ActiveRecord::Associations] for the full listing
 
-* Always use the new "sexy" validations. [link]
+* Always use the new '''"sexy"''' validations. [link]
 
  # bad
  validates_presence_of :email
@@ -354,6 +354,58 @@ Check [http://guides.rubyonrails.org/active_record_validations.html ActiveRecord
 Check [http://guides.rubyonrails.org/active_record_callbacks.html ActiveRecord::Callbacks] for the full list of supported events
 
 === ActiveRecord Queries ===
+
+* Avoid string interpolation in queries, as it will make your code susceptible to SQL injection attacks.
+
+ # bad - param will be interpolated unescaped
+ SalesOrder.where("item_id = #{params[:item_id]}")
+
+ # good - param will be properly escaped
+ SalesOrder.where('item_id = ?', params[:item_id])
+
+* If there are multiple parameters in a query, implement named placeholders (instead of positional) which should make the query a lot clearer and readable
+
+ # okish
+ Event.where(
+   'created_at >= ? AND created_at <= ?',
+   params[:start_date], params[:end_date]
+ )
+
+ # good
+ Event.where(
+   'created_at >= :start_date AND created_at <= :end_date',
+   start_date: params[:start_date], end_date: params[:end_date]
+ )
+
+* Prefer where over find_by_* when retrieving records with multiple parameters
+
+ # bad
+ User.find_by_first_name_and_last_name('Bruce', 'Wayne')
+
+ # good
+ User.where(first_name: 'Bruce', last_name: 'Wayne')
+
+
+* When specifying an explicit query in a method such as find_by_sql, use heredocs with squish. This allows you to legibly format the SQL with line breaks and indentations, while supporting syntax highlighting in many tools (including GitHub, Atom, and RubyMine).
+
+ User.find_by_sql(<<SQL.squish)
+   SELECT
+     users.id, accounts.plan
+   FROM
+     users
+   INNER JOIN
+     accounts
+   ON
+     accounts.user_id = users.id
+   # further complexities...
+ SQL
+
+[http://apidock.com/rails/String/squish '''String#squish'''] removes the indentation and newline characters so that your server log shows a fluid string of SQL rather than something like this:
+
+ SELECT\n    users.id, accounts.plan\n  FROM\n    users\n  INNER JOIN\n    acounts\n  ON\n    accounts.user_id = users.id
+
+
+
 
 == Migrations ==
 
