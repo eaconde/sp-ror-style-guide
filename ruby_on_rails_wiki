@@ -5,11 +5,8 @@ __TOC__
 == Configuration ==
 
 * All initialization code (custom or otherwise) needs be in the ''config/initializers'' directory. Files located here are auto-loaded and are executed on application startup.
-
 * Each gem needs to have its own serializer having the same name as the gem its initializing. For instance, devise.rb, will_paginate.rb, redis.rb, etc.
-
 * If a gem has different configuration per environment, you may accordingly add each gem's settings for each environment. Environment configs can be found under ''config/environments''.
-
 * Keys, tokens, database settings, email settings needs to be hidden and should never be exposed to the source code repositories. It is advised that these are instead replaced by environment variables and setup on the machine where it will be used. For instance:
 
  config.encryption_key = 'c4e0de8aadc6811d1248f0aa220e9fdc' <= # Bad
@@ -95,15 +92,267 @@ Since Rails 4.2 YAML configuration files can be easily loaded with the new confi
  end
 
 * If a must, use the '''''shallow: true''''' option to nest routes more than 1 level deep. Depending on the scenario, it can also be used as a block.
-
 * Don't use match to define any routes unless there is need to map multiple request types among [:get, :post, :patch, :put, :delete] to a single action using :via option.
 
 
 == Controllers ==
+
+* As per the mantra, keep all controllers 'skinny' by removing any business logic. All the business logic needs to be moved inside the relevant models. A controller should only retrieve data for the view layer.
+* Each controller action should (ideally) invoke only one method other than an initial find or new.
+* Share no more than two instance variables between a controller and a view
+
 === Rendering ===
 
+* Use templates over inline.
+
+* Use render plain: over render text:
+
+ # bad - sets MIME type to `text/html`
+ render text: 'Rails!'
+ # bad - requires explicit MIME type declaration
+ render text: 'Rails!', content_type: 'text/plain'
+
+ # good
+ render plain: 'Ruby!'
+
+* Response [https://gist.github.com/mlanett/a31c340b132ddefa9cca symbols] over response codes.
+
+ # bad
+ render status: 500
+
+ # good
+ render status: :forbidden
+
+
+
 == Models ==
+
+* Feel free to use non-ActiveRecord model classes
+* Name models with meaningful, short names without abbreviations
+* Since Rails 4, you can implement table-less models by using ActiveModel::Model
+
+ class Person
+   include ActiveModel::Model
+   attr_accessor :name, :age
+ end
+
+ person = Person.new(name: 'bob', age: '18')
+ person.name # => "bob"
+ person.age  # => "18"
+
+The ActiveModel library includes many other modular ActiveSupport features as listed [http://guides.rubyonrails.org/active_model_basics.html here].
+
+* Prevent putting any methods that format data (like code generating HTML) in the models.
+Unless they have some meaning in the business domain, these methods will like be used by the view layers which needs to be in the helpers instead. Keep your models for business logic and data-persistence only.
+
 === ActiveRecord ===
+
+* Avoid altering ActiveRecord defaults (table name, primary key, etc) unless you have a strong reason to do so. For instance, a database with tables not following the standards Rails models follow.
+
+* Apply group macro-style to organize model content.
+
+ class User < ActiveRecord::Base
+   # keep the default scope first (if any)
+   default_scope { where(active: true) }
+   scope :loyal, -> { where(['last_order >= ?', Date.today - 30.days]) }
+
+   # constants come up next
+   COLORS = %w(red green blue)
+
+   # afterwards we put attr related macros
+   attr_accessor :formatted_date_of_birth
+
+   attr_accessible :login, :first_name, :last_name, :email, :password
+
+   # Rails4+ enums after attr macros, prefer the hash syntax
+   enum gender: { female: 0, male: 1 }
+
+   # followed by association macros
+   belongs_to :country
+
+   has_many :authentications, dependent: :destroy
+
+   # and validation macros
+   validates :email, presence: true
+   validates :username, presence: true
+   validates :username, uniqueness: { case_sensitive: false }
+   validates :username, format: { with: /\A[A-Za-z][A-Za-z0-9._-]{2,19}\z/ }
+   validates :password, format: { with: /\A\S{8,128}\z/, allow_nil: true }
+
+   # next we have callbacks
+   before_save :cook
+   before_save :update_username_lower
+
+   # other macros (like devise's) should be placed after the callbacks
+
+   ...
+   def im_public
+   end
+
+   protected
+   def im_protected
+   end
+
+   private
+   def im_private
+   end
+ end
+
+* Use self[:attribute] instead of read_attribute(:attribute) and write_attribute(:attribute, value)
+
+ # bad
+ def amount
+   read_attribute(:amount)
+ end
+ def amount=(val)
+   read_attribute(:amount, val)
+ end
+
+ # good
+ def amount
+   self[:amount]
+ end
+ def amount=(val)
+   self[:amount] = val
+ end
+
+* Prefer has_many :through to has_and_belongs_to_many. Using has_many :through allows additional attributes and validations on the join model.
+
+ # not so good - using has_and_belongs_to_many
+ class User < ActiveRecord::Base
+   has_and_belongs_to_many :groups
+ end
+
+ class Group < ActiveRecord::Base
+   has_and_belongs_to_many :users
+ end
+
+ # preferred way - using has_many :through
+ class User < ActiveRecord::Base
+   has_many :memberships
+   has_many :groups, through: :memberships
+ end
+
+ class Membership < ActiveRecord::Base
+   belongs_to :user
+   belongs_to :group
+ end
+
+ class Group < ActiveRecord::Base
+   has_many :memberships
+   has_many :users, through: :memberships
+ end
+
+Check [http://guides.rubyonrails.org/association_basics.html ActiveRecord::Associations] for the full listing
+
+* Always use the new "sexy" validations. [link]
+
+ # bad
+ validates_presence_of :email
+ validates_length_of :email, maximum: 100
+
+ # good
+ validates :email, presence: true, length: { maximum: 100 }
+
+Check [http://guides.rubyonrails.org/active_record_validations.html ActiveRecord::Validation] for the full supported validations list
+
+* If a custom validation is used or repeated multiple times across different models, consider creating a custom validator file. Keep them in the app/validators directory.
+
+ # bad
+ class Manager
+   validates :email, format: { with: /\A([^@\s]+)@((?:[-a-z0-9]+\.)+[a-z]{2,})\z/i }
+ end
+ class Visitor
+   validates :email, format: { with: /\A([^@\s]+)@((?:[-a-z0-9]+\.)+[a-z]{2,})\z/i }
+ end
+
+ # good
+ class EmailValidator < ActiveModel::EachValidator
+   def validate_each(record, attribute, value)
+     record.errors[attribute] << (options[:message] || 'is not a valid email') unless value =~ /\A([^@\s]+)@((?:[-a-z0-9]+\.)+[a-z]{2,})\z/i
+   end
+ end
+
+ class Manager
+   validates :email, email: true
+ end
+ class Visitor
+   validates :email, email: true
+ end
+
+* Use named scopes freely specially if it will used several times within the app
+
+ class User < ActiveRecord::Base
+   scope :active, -> { where(active: true) }
+   scope :inactive, -> { where(active: false) }
+
+   scope :with_orders, -> { joins(:orders).select('distinct(users.id)') }
+ end
+
+* If a scope cannot be done and is too complicated for a single liner, create a class method instead.
+
+ class User < ActiveRecord::Base
+   def self.with_orders
+    joins(:orders).select('distinct(users.id)')
+   end
+ end
+
+* Use find_each to iterate over a collection of AR objects. Looping through a collection of records from the database (using the all method, for example) is very inefficient since it will try to instantiate all the objects at once. In that case, batch processing methods allow you to work with the records in batches, thereby greatly reducing memory consumption.
+
+ # bad
+ Person.all.each do |person|
+   person.do_awesome_stuff
+ end
+
+ Person.where('age > 21').each do |person|
+   person.party_all_night!
+ end
+
+ # good
+ Person.find_each do |person|
+   person.do_awesome_stuff
+ end
+
+ Person.where('age > 21').find_each do |person|
+   person.party_all_night!
+ end
+
+* Since Rails creates callbacks for dependent associations, always call before_destroy callbacks that perform validation with prepend: true
+
+ # bad (do_something_with_comments will have no access to the comments as it has already been deleted via the dependent_destroy option)
+ class Post < ActiveRecord::Base
+   has_many :comments, dependent: destroy
+   before_destroy :do_something_with_comments
+
+   private
+   def do_something_with_comments
+   end
+ end
+
+ # good (do_something_with_comments gets executed first before the comments get destroyed)
+ class Post < ActiveRecord::Base
+   has_many :comments, dependent: destroy
+   before_destroy :do_something_with_comments, prepend: true
+
+   private
+   def do_something_with_comments
+   end
+ end
+
+* Define the dependent option to the has_many and has_one associations. [link]
+
+ # bad
+ class Post < ActiveRecord::Base
+   has_many :comments
+ end
+
+ # good
+ class Post < ActiveRecord::Base
+   has_many :comments, dependent: :destroy
+ end
+
+Check [http://guides.rubyonrails.org/active_record_callbacks.html ActiveRecord::Callbacks] for the full list of supported events
+
 === ActiveRecord Queries ===
 
 == Migrations ==
