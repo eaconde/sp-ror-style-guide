@@ -388,7 +388,7 @@ Check [http://guides.rubyonrails.org/active_record_callbacks.html ActiveRecord::
 
 * When specifying an explicit query in a method such as find_by_sql, use heredocs with squish. This allows you to legibly format the SQL with line breaks and indentations, while supporting syntax highlighting in many tools (including GitHub, Atom, and RubyMine).
 
- User.find_by_sql(<<SQL.squish)
+ User.find_by_sql(<<-SQL.squish)
    SELECT
      users.id, accounts.plan
    FROM
@@ -398,16 +398,68 @@ Check [http://guides.rubyonrails.org/active_record_callbacks.html ActiveRecord::
    ON
      accounts.user_id = users.id
    # further complexities...
- SQL
+   SQL
 
 [http://apidock.com/rails/String/squish '''String#squish'''] removes the indentation and newline characters so that your server log shows a fluid string of SQL rather than something like this:
 
  SELECT\n    users.id, accounts.plan\n  FROM\n    users\n  INNER JOIN\n    acounts\n  ON\n    accounts.user_id = users.id
 
-
-
-
 == Migrations ==
+
+* Initialize all default values in the migrations instead of the application layer
+
+ # bad
+ def amount
+   self[:amount] or 0
+ end
+
+ # good
+ ...
+ t.integer :amount, default: 0
+ ...
+
+* Enforce foreign-key constraints. As of Rails 4.2, ActiveRecord supports foreign key constraints natively.
+
+* When writing constructive migrations (adding tables or columns), use the change method instead of up and down methods.
+
+ # the old way
+ class AddNameToPeople < ActiveRecord::Migration
+   def up
+     add_column :people, :name, :string
+   end
+
+   def down
+     remove_column :people, :name
+   end
+ end
+
+ # the new preferred way
+ class AddNameToPeople < ActiveRecord::Migration
+   def change
+     add_column :people, :name, :string
+   end
+ end
+
+* When writing migration for SQL Views, prefer the use of heredocs instead
+of plain SQL strings
+
+ class SetupInitialViews < ActiveRecord::Migration
+   def up
+     execute <<-SQL
+       CREATE OR REPLACE VIEW customers (
+        id, name, address, suburb, postcode,
+        state, country, phone, fax, mobile
+       ) AS SELECT cuid, name, address, suburb, postcode,
+                   state, country, phone, fax, mobile
+       FROM t_customers;
+     SQL
+   end
+   def down
+     execute <<-SQL
+       DROP VIEW customers
+     SQL
+   end
+ end
 
 == Views ==
 
